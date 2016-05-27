@@ -1,0 +1,9 @@
+.rvmrc
+.DS_Store
+config.yml
+*.csv
+.bundle
+.byebug*
+input
+output
+vendor
