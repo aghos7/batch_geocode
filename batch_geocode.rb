@@ -50,7 +50,7 @@ Geocoder.configure(
   use_https: true,
   # to use an API key:
   api_key: options[:geocoder_api_key],
-  timeout: 5
+  timeout: 10
 )
 
 def matches(line, result)
