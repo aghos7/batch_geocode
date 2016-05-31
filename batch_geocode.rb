@@ -20,6 +20,10 @@ def to_csv(hash)
   end.join SEPARATOR
 end
 
+def matches(line, result)
+  (result.present? && (line[:original_place_id].present? && line[:original_place_id] == result.try(:place_id)))
+end
+
 options = {}
 
 # Load config
@@ -52,10 +56,6 @@ Geocoder.configure(
   api_key: options[:geocoder_api_key],
   timeout: 10
 )
-
-def matches(line, result)
-  (result.present? && (line[:original_place_id].present? && line[:original_place_id] == result.try(:place_id)))
-end
 
 # read each line of input file, geocode and output results
 puts "reading address file"
