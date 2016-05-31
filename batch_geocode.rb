@@ -3,7 +3,8 @@ require 'csv'
 require 'date'
 require 'yaml'
 require 'geocoder'
-require 'byebug'
+# require 'byebug'
+require 'optparse'
 require 'active_support/all'
 
 SEPARATOR = ","
@@ -46,13 +47,15 @@ end
 
 # config geocoder
 Geocoder.configure(
-  # geocoding service (see below for supported options):
-  lookup: :google,
   use_https: true,
   # to use an API key:
   api_key: options[:geocoder_api_key],
   timeout: 5
 )
+
+def matches(line, result)
+  (result.present? && (line[:original_place_id].present? && line[:original_place_id] == result.try(:place_id)))
+end
 
 # read each line of input file, geocode and output results
 puts "reading address file"
@@ -63,49 +66,97 @@ CSV.open(options[:output_file], "wb") do |csv|
   CSV.foreach(options[:input_file], headers: true, header_converters: :symbol) do |line|
 
     begin
-      if line[:table_company] && line[:address]
-        query = "#{line[:table_company]} #{line[:address]}"
-        line[:using] = :table_company_and_address
-        result = Geocoder.search(query).first
+      line[:original_place_id] = [line[:table_place_id].to_s, line[:places_place_id].to_s].max
+      line[:original_latitude] = (line[:table_latitude] || line[:places_latitude])
+      line[:original_longitude] = (line[:table_longitude] || line[:places_longitude])
+
+      if line[:company] && line[:address]
+        line[:using] = :google_places_autocomplete_company_city_and_state
+        address_result = Geocoder.search("#{line[:address]}", lookup: :google).first
+        if address_result.present?
+          query = "#{line[:company]}, #{address_result.city} #{address_result.state_code}"
+          autocomplete_result = Geocoder.search(query, lookup: :google_places_autocomplete).first
+          result = Geocoder.search(autocomplete_result.place_id, lookup: :google_places_details).first if autocomplete_result.present?
+        end
       end
 
-      if result.nil? && line[:address].present?
+      if !matches(line, result) && line[:company] && line[:address]
+        line[:using] = :google_places_autocomplete_company_and_postal
+        address_result = Geocoder.search("#{line[:address]}", lookup: :google).first
+        if address_result.present?
+          query = "#{line[:company]}, #{address_result.postal_code}"
+          autocomplete_result = Geocoder.search(query, lookup: :google_places_autocomplete).first
+          result = Geocoder.search(autocomplete_result.place_id, lookup: :google_places_details).first if autocomplete_result.present?
+        end
+      end
+
+      if !matches(line, result) && line[:company] && line[:address]
+        line[:using] = :google_places_autocomplete_company_and_address
+        query = "#{line[:company]}, #{line[:address]}"
+        autocomplete_result = Geocoder.search(query, lookup: :google_places_autocomplete).first
+        result = Geocoder.search(autocomplete_result.place_id, lookup: :google_places_details).first if autocomplete_result.present?
+      end
+
+      if !matches(line, result) && line[:address].present?
         query = line[:address]
-        line[:using] = :address
-        result = Geocoder.search(query).first
+        line[:using] = :google_places_autocomplete_address
+        result = Geocoder.search(query, lookup: :google_places_autocomplete).first
+        result = Geocoder.search(result.place_id, lookup: :google_places_details).first if result.present?
       end
 
-      if result.nil? && line[:table_latitude].present? && line[:table_longitude].present?
+      if !matches(line, result) && line[:company] && line[:address]
+        query = "#{line[:company]}, #{line[:address]}"
+        line[:using] = :google_company_and_address
+        result = Geocoder.search(query, lookup: :google).first
+      end
+
+      if !matches(line, result) && line[:address].present?
+        query = line[:address]
+        line[:using] = :google_address
+        result = Geocoder.search(query, lookup: :google).first
+      end
+
+      if !matches(line, result) && line[:table_latitude].present? && line[:table_longitude].present?
         query = [line[:table_latitude], line[:table_longitude]]
-        line[:using] = :table_lat_lng
-        result = Geocoder.search(query).first
+        line[:using] = :google_table_lat_lng
+        result = Geocoder.search(query, lookup: :google).first
       end
-
-      line[:geocoded_place_id] = result.data['place_id']
-      line[:geocoded_latitude] = result.latitude
-      line[:geocoded_longitude] = result.longitude
-      line[:geocoded_address] = result.address
-      line[:geocoded_street_address] = result.street_address
-      line[:geocoded_city] = result.city
-      line[:geocoded_state] = result.state_code
-      line[:geocoded_sub_state] = result.sub_state
-      line[:geocoded_postal_code] = result.postal_code
-      line[:geocoded_country] = result.country_code
 
       possible_issues = []
-      if line[:geocoded_latitude] != (line[:table_latitude] || line[:places_latitude]) ||
-        line[:geocoded_longitude] != (line[:table_longitude] || line[:places_longitude])
-        possible_issues << :lat_lng_mismatch
+      if result.present?
+        line[:geocoded_company] = result.data['name']
+        line[:geocoded_place_id] = result.place_id
+        line[:geocoded_latitude] = result.latitude
+        line[:geocoded_longitude] = result.longitude
+        line[:geocoded_address] = result.address
+        line[:geocoded_street_address] = result.street_address
+        line[:geocoded_city] = result.city
+        line[:geocoded_state] = result.state_code
+        line[:geocoded_sub_state] = result.sub_state
+        line[:geocoded_postal_code] = result.postal_code
+        line[:geocoded_country] = result.country_code
+
+
+        if (line[:original_latitude].present? && line[:original_longitude].present?) &&
+          (line[:geocoded_latitude] != line[:original_latitude] || line[:geocoded_longitude] != line[:original_longitude])
+          possible_issues << :lat_lng_mismatch
+        else
+          possible_issues << :missing_lat_lng
+        end
+
+        if line[:original_place_id].present? && line[:geocoded_place_id] != line[:original_place_id]
+          possible_issues << :place_id_mismatch
+        end
+      else
+        possible_issues << :geocode_failed
       end
 
-      if line[:geocoded_place_id] != [line[:table_place_id].to_s, line[:places_place_id].to_s].max
-        possible_issues << :place_id_mismatch
-      end
+      line[:possible_issues] = possible_issues.compact.join(", ")
 
-      line[:possible_issues] = possible_issues.compact.join(', ')
-
-      puts "#{line[:table]}:#{line[:table_id]}:#{line[:account_id]} - #{line[:geocoded_address]} " +
-        "[#{line[:geocoded_latitude]}, #{line[:geocoded_longitude]}] [#{line[:geocoded_place_id]}]"
+      puts "#{line[:table]}:#{line[:table_id]}:#{line[:account_id]} - #{line[:geocoded_address]}" +
+        " [#{line[:geocoded_latitude]}, #{line[:geocoded_longitude]}]" +
+        " [#{line[:geocoded_place_id]}, #{line[:original_place_id]}]" +
+        " using #{line[:using]}"
 
       csv << line
     rescue => e
