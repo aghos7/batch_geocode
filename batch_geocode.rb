@@ -21,7 +21,11 @@ def to_csv(hash)
 end
 
 def matches(line, result)
-  (result.present? && (line[:original_place_id].present? && line[:original_place_id] == result.try(:place_id)))
+  match = result.present?
+  if (line[:original_place_id].present?)
+    match = match && line[:original_place_id] == result.try(:place_id)
+  end
+  match
 end
 
 options = {}
