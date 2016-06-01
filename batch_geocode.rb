@@ -66,8 +66,8 @@ CSV.open(options[:output_file], "wb") do |csv|
   CSV.foreach(options[:input_file], headers: true, header_converters: :symbol) do |line|
     begin
       line[:original_place_id] = [line[:table_place_id].to_s, line[:places_place_id].to_s].max
-      line[:original_latitude] = (line[:table_latitude] || line[:places_latitude])
-      line[:original_longitude] = (line[:table_longitude] || line[:places_longitude])
+      line[:original_latitude] = (line[:table_latitude] || line[:places_latitude]).try(:to_f).try(:round, options[:lat_lng_scale])
+      line[:original_longitude] = (line[:table_longitude] || line[:places_longitude]).try(:to_f).try(:round, options[:lat_lng_scale])
 
       if line[:company].present? && line[:address].present?
         line[:using] = :google_places_autocomplete_company_city_and_state
@@ -181,8 +181,8 @@ CSV.open(options[:output_file], "wb") do |csv|
       if result.present?
         line[:geocoded_company] = result.data['name']
         line[:geocoded_place_id] = result.place_id
-        line[:geocoded_latitude] = result.latitude.round(options[:lat_lng_scale]).to_s
-        line[:geocoded_longitude] = result.longitude.round(options[:lat_lng_scale]).to_s
+        line[:geocoded_latitude] = result.latitude.try(:to_f).try(:round, options[:lat_lng_scale])
+        line[:geocoded_longitude] = result.longitude.try(:to_f).try(:round, options[:lat_lng_scale])
         line[:geocoded_address] = result.address
         line[:geocoded_street_address] = result.street_address
         line[:geocoded_city] = result.city
@@ -191,10 +191,10 @@ CSV.open(options[:output_file], "wb") do |csv|
         line[:geocoded_postal_code] = result.postal_code
         line[:geocoded_country] = result.country_code
 
-        if (line[:original_latitude].present? && line[:original_longitude].present?) &&
-          (line[:geocoded_latitude] != line[:original_latitude].to_s ||
-            line[:geocoded_longitude] != line[:original_longitude].to_s)
-          possible_issues << :lat_lng_mismatch
+        if line[:original_latitude].present? && line[:original_longitude].present?
+          if [line[:geocoded_latitude], line[:geocoded_longitude]] != [line[:original_latitude], line[:original_longitude]]
+            possible_issues << :lat_lng_mismatch
+          end
         else
           possible_issues << :missing_lat_lng
         end
@@ -211,7 +211,7 @@ CSV.open(options[:output_file], "wb") do |csv|
       puts "#{line[:table]}:#{line[:table_id]}:#{line[:account_id]} - #{line[:geocoded_address]}" +
         " [#{line[:geocoded_latitude]}, #{line[:geocoded_longitude]}]" +
         " [#{line[:geocoded_place_id]}, #{line[:original_place_id]}]" +
-        " using #{line[:using]}"
+        " using #{line[:using]} issues: #{line[:possible_issues]}"
       if first_row
         first_row = false
         csv << line.headers
