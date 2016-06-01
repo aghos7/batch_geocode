@@ -154,6 +154,18 @@ CSV.open(options[:output_file], "wb") do |csv|
       end
 
       if result.nil? && line[:company].present? && line[:address].present?
+        line[:using] = :google_places_autocomplete_company_and_postal
+        address_result = Geocoder.search("#{line[:address]}", lookup: :google).first
+        if address_result.present?
+          query = "#{line[:company]}, #{address_result.postal_code}"
+          autocomplete_result = Geocoder.search(query, lookup: :google_places_autocomplete).first
+          if autocomplete_result.present?
+            result = Geocoder.search(autocomplete_result.place_id, lookup: :google_places_details).first
+          end
+        end
+      end
+
+      if result.nil? && line[:company].present? && line[:address].present?
         query = "#{line[:company]}, #{line[:address]}"
         line[:using] = :google_company_and_address
         result = Geocoder.search(query, lookup: :google).first
