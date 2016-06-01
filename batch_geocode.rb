@@ -47,12 +47,6 @@ OptionParser.new do |opt|
   opt.on('-k api_key', '--api_key api_key', 'Geocoder API Key') { |o| options[:geocoder_api_key] = o }
 end.parse!
 
-# Delete output if exists
-if File.exist?(options[:output_file])
-  puts 'CSV file exists - deleting'
-  File.delete(options[:output_file])
-end
-
 # config geocoder
 Geocoder.configure(
   use_https: true,
@@ -65,10 +59,9 @@ Geocoder.configure(
 puts "reading address file"
 # write to CSV
 CSV.open(options[:output_file], "wb") do |csv|
-
-  id_count = 1
+  first_row = true
+  # table table_id  account_id  company address table_latitude  table_longitude table_place_id  places_id places_place_id places_company  places_latitude places_longitude  original_google_place_id  original_latitude original_longitude  using geocoded_company  geocoded_place_id geocoded_latitude geocoded_longitude  geocoded_address  geocoded_street_address geocoded_city geocoded_state  geocoded_sub_state  geocoded_postal_code  geocoded_country  possible_issues
   CSV.foreach(options[:input_file], headers: true, header_converters: :symbol) do |line|
-
     begin
       line[:original_place_id] = [line[:table_place_id].to_s, line[:places_place_id].to_s].max
       line[:original_latitude] = (line[:table_latitude] || line[:places_latitude])
@@ -161,7 +154,10 @@ CSV.open(options[:output_file], "wb") do |csv|
         " [#{line[:geocoded_latitude]}, #{line[:geocoded_longitude]}]" +
         " [#{line[:geocoded_place_id]}, #{line[:original_place_id]}]" +
         " using #{line[:using]}"
-
+      if first_row
+        first_row = false
+        csv << line.headers
+      end
       csv << line
     rescue => e
       puts "processing error #{e.to_s}"
