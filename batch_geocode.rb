@@ -23,7 +23,7 @@ end
 def matches(line, result)
   match = result.present?
   if (line[:original_place_id].present?)
-    match = match && line[:original_place_id] == result.try(:place_id)
+    match = match && line[:original_place_id].to_s == result.try(:place_id).try(:to_s)
   end
   match
 end
@@ -36,6 +36,7 @@ begin
   options[:input_file] = yaml['input_file'] || 'input.csv'
   options[:output_file] = yaml['output_file'] || 'output.csv'
   options[:geocoder_api_key] = yaml['geocoder_api_key']
+  options[:lat_lng_scale] = yaml['lat_lng_scale'].try(:to_i) || 8
 rescue Errno::ENOENT
   puts "config file not found"
 end
@@ -123,8 +124,8 @@ CSV.open(options[:output_file], "wb") do |csv|
       if result.present?
         line[:geocoded_company] = result.data['name']
         line[:geocoded_place_id] = result.place_id
-        line[:geocoded_latitude] = result.latitude
-        line[:geocoded_longitude] = result.longitude
+        line[:geocoded_latitude] = result.latitude.round(options[:lat_lng_scale]).to_s
+        line[:geocoded_longitude] = result.longitude.round(options[:lat_lng_scale]).to_s
         line[:geocoded_address] = result.address
         line[:geocoded_street_address] = result.street_address
         line[:geocoded_city] = result.city
@@ -133,15 +134,15 @@ CSV.open(options[:output_file], "wb") do |csv|
         line[:geocoded_postal_code] = result.postal_code
         line[:geocoded_country] = result.country_code
 
-
         if (line[:original_latitude].present? && line[:original_longitude].present?) &&
-          (line[:geocoded_latitude] != line[:original_latitude] || line[:geocoded_longitude] != line[:original_longitude])
+          (line[:geocoded_latitude] != line[:original_latitude].to_s ||
+            line[:geocoded_longitude] != line[:original_longitude].to_s)
           possible_issues << :lat_lng_mismatch
         else
           possible_issues << :missing_lat_lng
         end
 
-        if line[:original_place_id].present? && line[:geocoded_place_id] != line[:original_place_id]
+        if line[:original_place_id].present? && line[:geocoded_place_id].to_s != line[:original_place_id].to_s
           possible_issues << :place_id_mismatch
         end
       else
