@@ -68,6 +68,7 @@ CSV.open(options[:output_file], "wb") do |csv|
       line[:original_place_id] = [line[:table_place_id].to_s, line[:places_place_id].to_s].max
       line[:original_latitude] = (line[:table_latitude] || line[:places_latitude]).try(:to_f).try(:round, options[:lat_lng_scale])
       line[:original_longitude] = (line[:table_longitude] || line[:places_longitude]).try(:to_f).try(:round, options[:lat_lng_scale])
+      result = nil
 
       if line[:company].present? && line[:address].present?
         line[:using] = :google_places_autocomplete_company_city_and_state
