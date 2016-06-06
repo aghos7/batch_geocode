@@ -25,8 +25,8 @@ def score_results(results, line, options = {})
   results.each do |result|
     # Score based on lat/lng
     if result.latitude.present? && result.longitude.present?
-      lat = result.latitude.try(:to_f).try(:round, options[:lat_lng_scale])
-      lng = result.longitude.try(:to_f).try(:round, options[:lat_lng_scale])
+      lat = result.latitude.try(:to_f).try(:round, @options[:lat_lng_scale])
+      lng = result.longitude.try(:to_f).try(:round, @options[:lat_lng_scale])
       if [lat, lng] == [line[:using_latitude], line[:using_longitude]]
         result.score += 1000
         result.scored_by << :lat_lng
@@ -71,7 +71,7 @@ def score_results(results, line, options = {})
       result.scored_by << :country
     end
     # Score types
-    if ((result.types || []) & [options[:limit_types]].flatten).any?
+    if ((result.types || []) & [@options[:limit_types]].flatten).any?
       result.score += 2000
       result.scored_by << :place_type
     end
@@ -92,42 +92,146 @@ def score_results(results, line, options = {})
   end
 end
 
-options = {}
+def search(query, opts={})
+  results = Geocoder.search(query, opts)
+  sleep (opts[:sleep] || @options[:sleep]) # ick
+  results
+end
+
+def line_defaults(line, opts={})
+  line[:using_place_id] = ""
+  line[:using_latitude] = ""
+  line[:using_longitude] = ""
+  line[:using_company] = ""
+  line[:using_address] = ""
+  line[:geocoded_company] = ""
+  line[:geocoded_place_id] = ""
+  line[:geocoded_latitude] = ""
+  line[:geocoded_longitude] = ""
+  line[:geocoded_address] = ""
+  line[:geocoded_street_address] = ""
+  line[:geocoded_city] = ""
+  line[:geocoded_state] = ""
+  line[:geocoded_sub_state] = ""
+  line[:geocoded_postal_code] = ""
+  line[:geocoded_country] = ""
+  line[:geocoded_types] = ""
+  line[:geocoded_wiw_industry] = ""
+  line[:geocoded_score] = ""
+  line[:geocoded_scored_by] = ""
+  line[:geocoded_lookup] = ""
+  line[:possible_issues] = ""
+  line[:geocoded_status] = ""
+end
+
+def log_line(line, opts={})
+  puts "--------------------------------------------------------------------------------"
+  puts "#{line[:table]}:#{line[:table_id]}:#{line[:account_id]}"
+  puts "using company: #{line[:using_company]}"
+  puts "using address: #{line[:using_address]}"
+  puts "using place_id: #{line[:using_place_id]}"
+  puts "geo company: #{line[:geocoded_company]}"
+  puts "geo address: #{line[:geocoded_address]}"
+  puts "geo place_id #{line[:geocoded_place_id]}"
+  puts "lookup: #{line[:geocoded_lookup]}"
+  puts "score: #{line[:geocoded_score]}"
+  puts "scored by: #{line[:geocoded_scored_by]}"
+  puts "industry: #{line[:geocoded_wiw_industry]}"
+  puts "issues: #{line[:possible_issues]}"
+  puts "status: #{line[:geocoded_status]}"
+end
+
+def possible_issues(line, result, opts={})
+  issues = []
+  if line[:using_latitude].present? && line[:using_longitude].present?
+    if [line[:geocoded_latitude], line[:geocoded_longitude]] != [line[:using_latitude], line[:using_longitude]]
+      issues << :lat_lng_mismatch
+    end
+  else
+    issues << :missing_lat_lng
+  end
+
+  if line[:using_place_id].present?
+    if line[:geocoded_place_id].to_s != line[:using_place_id].to_s
+      issues << :place_id_mismatch
+    end
+  else
+    issues << :missing_place_id
+  end
+
+  if line[:geocoded_company].present? && line[:geocoded_company] != line[:using_company]
+    issues << :company_mismatch
+  end
+
+  if result.try(:street_address).present? && result.street_address != result.address_result.try(:street_address)
+    issues << :street_address_mismatch
+  end
+
+  if result.try(:city).present? && result.city != result.address_result.try(:city)
+    issues << :city_mismatch
+  end
+
+  if result.try(:state_code).present? && result.state_code != result.address_result.try(:state_code)
+    issues << :state_mismatch
+  end
+
+  if result.try(:postal_code).present? && result.postal_code != result.address_result.try(:postal_code)
+    issues << :postal_mismatch
+  end
+
+  if result.try(:country_code).present? && result.country_code != result.address_result.try(:country_code)
+    issues << :country_mismatch
+  end
+  issues
+end
+
+def
+
+@options = {}
 
 # Load config
 begin
   yaml = YAML.load_file("config.yml")
-  options[:input_file] = yaml['input_file'] || 'input.csv'
-  options[:output_file] = yaml['output_file'] || 'output.csv'
-  options[:geocoder_api_key] = yaml['geocoder_api_key']
-  options[:lat_lng_scale] = yaml['lat_lng_scale'].try(:to_i) || 8
+  @options[:input_file] = yaml['input_file'] || 'input.csv'
+  @options[:output_file] = yaml['output_file'] || 'output.csv'
+  @options[:geocoder_api_key] = yaml['geocoder_api_key']
+  @options[:lat_lng_scale] = yaml['lat_lng_scale'].try(:to_i) || 8
+  @options[:sleep] = yaml[:sleep].try(:to_f) || 0
+  @options[:line_sleep] = yaml[:line_sleep].try(:to_f) || 1
+  @options[:always_raise] = yaml[:always_raise] || :all
 rescue Errno::ENOENT
   puts "config file not found"
 end
 
 # read command line options
 OptionParser.new do |opt|
-  opt.on('-i input_file', '--input_file input_file', 'Input file') { |o| options[:input_file] = o }
-  opt.on('-o output_file', '--output_file output_file', 'Output file') { |o| options[:output_file] = o }
-  opt.on('-k api_key', '--api_key api_key', 'Geocoder API Key') { |o| options[:geocoder_api_key] = o }
+  opt.on('-i input_file', '--input_file input_file', 'Input file') { |o| @options[:input_file] = o }
+  opt.on('-o output_file', '--output_file output_file', 'Output file') { |o| @options[:output_file] = o }
+  opt.on('-k api_key', '--api_key api_key', 'Geocoder API Key') { |o| @options[:geocoder_api_key] = o }
 end.parse!
 
 # config geocoder
 Geocoder.configure(
   use_https: true,
   # to use an API key:
-  api_key: options[:geocoder_api_key],
-  timeout: 10
+  api_key: @options[:geocoder_api_key],
+  timeout: 10,
+  always_raise: @options[:always_raise]
 )
 
 # read each line of input file, geocode and output results
 puts "reading address file"
 # write to CSV
-CSV.open(options[:output_file], "wb") do |csv|
+CSV.open(@options[:output_file], "wb") do |csv|
   first_row = true
-  CSV.foreach(options[:input_file], headers: true, header_converters: :symbol) do |line|
+  CSV.foreach(@options[:input_file], headers: true, header_converters: :symbol) do |line|
     begin
       result = nil
+      line_defaults(line)
+      if first_row
+        first_row = false
+        csv << line.headers
+      end
       match_options = {}
       query_params = {}
       if line[:table] == 'accounts'
@@ -137,12 +241,12 @@ CSV.open(options[:output_file], "wb") do |csv|
       match_options[:match_place_id] = true
 
       line[:using_place_id] = (line[:places_place_id] || line[:table_place_id]).to_s
-      line[:using_latitude] = (line[:places_latitude] || line[:table_latitude]).try(:to_f).try(:round, options[:lat_lng_scale])
-      line[:using_longitude] = (line[:places_longitude] || line[:table_longitude]).try(:to_f).try(:round, options[:lat_lng_scale])
+      line[:using_latitude] = (line[:places_latitude] || line[:table_latitude]).try(:to_f).try(:round, @options[:lat_lng_scale])
+      line[:using_longitude] = (line[:places_longitude] || line[:table_longitude]).try(:to_f).try(:round, @options[:lat_lng_scale])
 
       results = []
       [line[:address], line[:account_address]].compact.uniq.each do |address|
-        Geocoder.search("#{address}", lookup: :google).each do |address_result|
+        search("#{address}", lookup: :google).each do |address_result|
           [line[:company], line[:account_company]].compact.uniq.each do |company|
             queries = []
             queries << {
@@ -166,15 +270,15 @@ CSV.open(options[:output_file], "wb") do |csv|
               text: "#{address}",
               score: 100 }
             queries.each do |query|
-              Geocoder.search(query[:text], lookup: :google_places_autocomplete, params: query_params).each do |autocomplete_result|
-                results += Geocoder.search(autocomplete_result.place_id, lookup: :google_places_details).each do |result|
+              search(query[:text], lookup: :google_places_autocomplete, params: query_params).each do |autocomplete_result|
+                results += search(autocomplete_result.place_id, lookup: :google_places_details).each do |result|
                   class << result
                     attr_accessor :lookup
                   end
                   result.lookup = :google_places_autocomplete
                 end
               end
-              results += Geocoder.search(query[:text], lookup: :google, params: query_params).each do |result|
+              results += search(query[:text], lookup: :google, params: query_params).each do |result|
                 class << result
                   attr_accessor :lookup
                 end
@@ -201,104 +305,44 @@ CSV.open(options[:output_file], "wb") do |csv|
         end
       end
       results.uniq!{ |result| result.place_id }
-      score_results(results, line, options.merge(match_options))
+      score_results(results, line, @options.merge(match_options))
       results.sort_by!{ |result| -result.score }
 
       result = results.first
 
-      if result
-        line[:using_company] = result.using_company
-        line[:using_address] = result.using_address
-      end
+      line[:using_company] = result.try(:using_company)
+      line[:using_address] = result.try(:using_address)
+      line[:geocoded_company] = result.try(:data).try(:[], 'name')
+      line[:geocoded_place_id] = result.try(:place_id)
+      line[:geocoded_latitude] = result.try(:latitude).try(:to_f).try(:round, @options[:lat_lng_scale])
+      line[:geocoded_longitude] = result.try(:longitude).try(:to_f).try(:round, @options[:lat_lng_scale])
+      line[:geocoded_address] = result.try(:address)
+      line[:geocoded_street_address] = result.try(:street_address)
+      line[:geocoded_city] = result.try(:city)
+      line[:geocoded_state] = result.try(:state_code)
+      line[:geocoded_sub_state] = result.try(:sub_state)
+      line[:geocoded_postal_code] = result.try(:postal_code)
+      line[:geocoded_country] = result.try(:country_code)
+      line[:geocoded_types] = result.try(:types).try(:join, ',')
+      line[:geocoded_wiw_industry] = Wiw::google_place_types_to_industry_ids(result.try(:types)).first || Wiw::INDUSTRIES['Other']
+      line[:geocoded_score] = result.try(:score)
+      line[:geocoded_scored_by] = result.try(:scored_by).try(:join, ',')
+      line[:geocoded_lookup] = result.try(:lookup)
+      line[:possible_issues] = possible_issues(line, result).compact.join(", ")
+      line[:geocoded_status] = result.present? ? :success : :geocode_failed
 
-      possible_issues = []
-      if result.present?
-        line[:geocoded_company] = result.data['name']
-        line[:geocoded_place_id] = result.place_id
-        line[:geocoded_latitude] = result.latitude.try(:to_f).try(:round, options[:lat_lng_scale])
-        line[:geocoded_longitude] = result.longitude.try(:to_f).try(:round, options[:lat_lng_scale])
-        line[:geocoded_address] = result.address
-        line[:geocoded_street_address] = result.street_address
-        line[:geocoded_city] = result.city
-        line[:geocoded_state] = result.state_code
-        line[:geocoded_sub_state] = result.sub_state
-        line[:geocoded_postal_code] = result.postal_code
-        line[:geocoded_country] = result.country_code
-        line[:geocoded_types] = result.types.join(',')
-        line[:geocoded_wiw_industry] = Wiw::google_place_types_to_industry_ids(result.types).first || Wiw::INDUSTRIES['Other']
-        line[:geocoded_score] = result.score
-        line[:geocoded_scored_by] = result.scored_by.join(',')
-        line[:geocoded_lookup] = result.lookup
+      log_line(line)
 
-        if line[:using_latitude].present? && line[:using_longitude].present?
-          if [line[:geocoded_latitude], line[:geocoded_longitude]] != [line[:using_latitude], line[:using_longitude]]
-            possible_issues << :lat_lng_mismatch
-          end
-        else
-          possible_issues << :missing_lat_lng
-        end
-
-        if line[:using_place_id].present?
-          if line[:geocoded_place_id].to_s != line[:using_place_id].to_s
-            possible_issues << :place_id_mismatch
-          end
-        else
-          possible_issues << :missing_place_id
-        end
-
-        if line[:geocoded_company] != line[:using_company]
-          possible_issues << :company_mismatch
-        end
-
-        if result.street_address.present? && result.street_address != result.address_result.try(:street_address)
-          possible_issues << :street_address_mismatch
-        end
-
-        if result.city.present? && result.city != result.address_result.try(:city)
-          possible_issues << :city_mismatch
-        end
-
-        if result.state_code.present? && result.state_code != result.address_result.try(:state_code)
-          possible_issues << :state_mismatch
-        end
-
-        if result.postal_code.present? && result.postal_code != result.address_result.try(:postal_code)
-          possible_issues << :postal_mismatch
-        end
-
-        if result.country_code.present? && result.country_code != result.address_result.try(:country_code)
-          possible_issues << :country_mismatch
-        end
-      else
-        possible_issues << :geocode_failed
-      end
-
-      line[:possible_issues] = possible_issues.compact.join(", ")
-
-      puts "--------------------------------------------------------------------------------"
-      puts "#{line[:table]}:#{line[:table_id]}:#{line[:account_id]}"
-      puts "using company: #{line[:using_company]}"
-      puts "using address: #{line[:using_address]}"
-      puts "using place_id: #{line[:using_place_id]}"
-      puts "geo company: #{line[:geocoded_company]}"
-      puts "geo address: #{line[:geocoded_address]}"
-      puts "geo place_id #{line[:geocoded_place_id]}"
-      puts "lookup: #{line[:geocoded_lookup]}"
-      puts "score: #{line[:geocoded_score]}"
-      puts "scored by: #{line[:geocoded_scored_by]}"
-      puts "industry: #{line[:geocoded_wiw_industry]}"
-      puts "issues: #{line[:possible_issues]}"
-
-      if first_row
-        first_row = false
-        csv << line.headers
-      end
+      csv << line
+    rescue Geocoder::Error => e
+      line[:geocoded_status] = e.to_s
+      log_line(line)
       csv << line
     rescue => e
       puts "processing error #{e.to_s}"
       puts line.inspect
     end
-    # sleep 1
+    sleep @options[:line_sleep]
   end
 end
 

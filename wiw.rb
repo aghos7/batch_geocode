@@ -60,6 +60,7 @@ module Wiw
   end
 
   def self.google_place_types_to_regexes(types)
+    types ||= []
     types.map do |type|
       Regexp.new('(?:' + (type.downcase.split('_') - ['of', 'or']).join('|') + ')', Regexp::IGNORECASE)
     end
