@@ -185,8 +185,6 @@ def possible_issues(line, result, opts={})
   issues
 end
 
-def
-
 @options = {}
 
 # Load config
