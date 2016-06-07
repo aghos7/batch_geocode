@@ -99,29 +99,29 @@ def search(query, opts={})
 end
 
 def line_defaults(line, opts={})
-  line[:using_place_id] = ""
-  line[:using_latitude] = ""
-  line[:using_longitude] = ""
-  line[:using_company] = ""
-  line[:using_address] = ""
-  line[:geocoded_company] = ""
-  line[:geocoded_place_id] = ""
-  line[:geocoded_latitude] = ""
-  line[:geocoded_longitude] = ""
-  line[:geocoded_address] = ""
-  line[:geocoded_street_address] = ""
-  line[:geocoded_city] = ""
-  line[:geocoded_state] = ""
-  line[:geocoded_sub_state] = ""
-  line[:geocoded_postal_code] = ""
-  line[:geocoded_country] = ""
-  line[:geocoded_types] = ""
-  line[:geocoded_wiw_industry] = ""
-  line[:geocoded_score] = ""
-  line[:geocoded_scored_by] = ""
-  line[:geocoded_lookup] = ""
-  line[:possible_issues] = ""
-  line[:geocoded_status] = ""
+  line[:using_place_id] ||= ""
+  line[:using_latitude] ||= ""
+  line[:using_longitude] ||= ""
+  line[:using_company] ||= ""
+  line[:using_address] ||= ""
+  line[:geocoded_company] ||= ""
+  line[:geocoded_place_id] ||= ""
+  line[:geocoded_latitude] ||= ""
+  line[:geocoded_longitude] ||= ""
+  line[:geocoded_address] ||= ""
+  line[:geocoded_street_address] ||= ""
+  line[:geocoded_city] ||= ""
+  line[:geocoded_state] ||= ""
+  line[:geocoded_sub_state] ||= ""
+  line[:geocoded_postal_code] ||= ""
+  line[:geocoded_country] ||= ""
+  line[:geocoded_types] ||= ""
+  line[:geocoded_wiw_industry] ||= ""
+  line[:geocoded_score] ||= ""
+  line[:geocoded_scored_by] ||= ""
+  line[:geocoded_lookup] ||= ""
+  line[:possible_issues] ||= ""
+  line[:geocoded_status] ||= ""
 end
 
 def log_line(line, opts={})
@@ -197,6 +197,7 @@ begin
   @options[:sleep] = yaml[:sleep].try(:to_f) || 0
   @options[:line_sleep] = yaml[:line_sleep].try(:to_f) || 1
   @options[:always_raise] = yaml[:always_raise] || :all
+  @options[:skip_status] = yaml[:skip_status].try(:split, ',') || nil
 rescue Errno::ENOENT
   puts "config file not found"
 end
@@ -206,6 +207,7 @@ OptionParser.new do |opt|
   opt.on('-i input_file', '--input_file input_file', 'Input file') { |o| @options[:input_file] = o }
   opt.on('-o output_file', '--output_file output_file', 'Output file') { |o| @options[:output_file] = o }
   opt.on('-k api_key', '--api_key api_key', 'Geocoder API Key') { |o| @options[:geocoder_api_key] = o }
+  opt.on('-s skip_status', '--skip_status skip_status', 'Statuses to skip') { |o| @options[:skip_status] = o.try(:split, ',') }
 end.parse!
 
 # config geocoder
@@ -221,15 +223,21 @@ Geocoder.configure(
 puts "reading address file"
 # write to CSV
 CSV.open(@options[:output_file], "wb") do |csv|
-  first_row = true
+  line_number = 0
   CSV.foreach(@options[:input_file], headers: true, header_converters: :symbol) do |line|
     begin
       result = nil
       line_defaults(line)
-      if first_row
-        first_row = false
+      if line_number == 0
         csv << line.headers
       end
+      line_number += 1
+      if @options[:skip_status].present? && @options[:skip_status].include?(line[:geocoded_status])
+        csv << line
+        puts "skipping status: #{line[:geocoded_status]}"
+        next
+      end
+
       match_options = {}
       query_params = {}
       if line[:table] == 'accounts'
