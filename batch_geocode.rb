@@ -198,6 +198,7 @@ begin
   @options[:line_sleep] = yaml[:line_sleep].try(:to_f) || 1
   @options[:always_raise] = yaml[:always_raise] || :all
   @options[:skip_status] = yaml[:skip_status].try(:split, ',') || nil
+  @options[:exclude_skipped] = yaml[:exclude_skipped] == "true" || false
 rescue Errno::ENOENT
   puts "config file not found"
 end
@@ -208,6 +209,9 @@ OptionParser.new do |opt|
   opt.on('-o output_file', '--output_file output_file', 'Output file') { |o| @options[:output_file] = o }
   opt.on('-k api_key', '--api_key api_key', 'Geocoder API Key') { |o| @options[:geocoder_api_key] = o }
   opt.on('-s skip_status', '--skip_status skip_status', 'Statuses to skip') { |o| @options[:skip_status] = o.try(:split, ',') }
+  opt.on('-e exclude_skipped', '--exclude_skipped exclude_skipped', 'Exclude skipped from output - true/false') do |o|
+    @options[:exclude_skipped] = (o == "true")
+  end
 end.parse!
 
 # config geocoder
@@ -233,7 +237,7 @@ CSV.open(@options[:output_file], "wb") do |csv|
       end
       line_number += 1
       if @options[:skip_status].present? && @options[:skip_status].include?(line[:geocoded_status])
-        csv << line
+        csv << line unless @options[:exclude_skipped]
         puts "skipping status: #{line[:geocoded_status]}"
         next
       end
