@@ -21,12 +21,12 @@ def to_csv(hash)
   end.join SEPARATOR
 end
 
-def score_results(results, line, options = {})
+def score_results(results, line, opts = {})
   results.each do |result|
     # Score based on lat/lng
     if result.latitude.present? && result.longitude.present?
-      lat = result.latitude.try(:to_f).try(:round, @options[:lat_lng_scale])
-      lng = result.longitude.try(:to_f).try(:round, @options[:lat_lng_scale])
+      lat = result.latitude.try(:to_f).try(:round, opts[:lat_lng_scale])
+      lng = result.longitude.try(:to_f).try(:round, opts[:lat_lng_scale])
       if [lat, lng] == [line[:using_latitude], line[:using_longitude]]
         result.score += 1000
         result.scored_by << :lat_lng
@@ -71,8 +71,8 @@ def score_results(results, line, options = {})
       result.scored_by << :country
     end
     # Score types
-    if ((result.types || []) & [@options[:limit_types]].flatten).any?
-      result.score += 2000
+    if ((result.types || []) & [opts[:limit_types]].flatten).any?
+      result.score += 1500
       result.scored_by << :place_type
     end
     # Score table_place_id
@@ -338,7 +338,7 @@ CSV.open(@options[:output_file], "wb") do |csv|
       line[:geocoded_score] = result.try(:score)
       line[:geocoded_scored_by] = result.try(:scored_by).try(:join, ',')
       line[:geocoded_lookup] = result.try(:lookup)
-      line[:possible_issues] = possible_issues(line, result).compact.join(", ")
+      line[:possible_issues] = possible_issues(line, result).compact.join(',')
       line[:geocoded_status] = result.present? ? :success : :geocode_failed
 
       log_line(line)
